@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Buscador de Empleados - AgriCactus</title>
+    <style>
+        :root { --primary: #2e7d32; --accent: #1565c0; --bg: #eceff1; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); margin: 0; padding: 15px; }
+        .header { background: var(--primary); color: white; padding: 20px; border-radius: 15px; text-align: center; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        
+        .search-box { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        input { width: 100%; height: 55px; font-size: 18px; border: 2px solid #ddd; border-radius: 10px; padding: 0 15px; box-sizing: border-box; outline: none; transition: 0.3s; }
+        input:focus { border-color: var(--accent); box-shadow: 0 0 8px rgba(21,101,192,0.2); }
+
+        .results-container { margin-top: 20px; }
+        .employee-card { background: white; border-radius: 12px; padding: 15px; margin-bottom: 12px; border-left: 6px solid var(--accent); box-shadow: 0 2px 5px rgba(0,0,0,0.05); animation: fadeIn 0.3s; }
+        .emp-name { font-weight: bold; font-size: 18px; color: #333; margin-bottom: 5px; text-transform: uppercase; }
+        .emp-detail { font-size: 14px; color: #666; display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+        .label { font-weight: bold; color: #444; font-size: 11px; text-transform: uppercase; }
+
+        .btn-config { background: #546e7a; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-size: 12px; margin-top: 10px; cursor: pointer; }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: white; z-index: 1000; padding: 20px; box-sizing: border-box; overflow-y: auto; }
+        
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .no-data { text-align: center; color: #999; margin-top: 50px; }
+        .count-badge { background: #333; color: white; padding: 4px 10px; border-radius: 20px; font-size: 12px; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h2 style="margin:0">🔎 CONSULTA DE EMPLEADOS</h2>
+    <p style="margin:5px 0 0 0; opacity: 0.8; font-size: 14px;">AgriCactus Sistema de Información</p>
+</div>
+
+<div class="search-box">
+    <label style="font-size: 12px; font-weight: bold; color: #555;">BUSCAR POR NOMBRE, CREDENCIAL O CURP</label>
+    <input type="text" id="mainSearch" placeholder="Ej: 3373 o Abraham..." oninput="realTimeSearch()">
+    <div style="margin-top: 10px; text-align: right;">
+        <span class="count-badge">Total en Padrón: <span id="totalEmp">0</span></span>
+    </div>
+</div>
+
+<div id="results" class="results-container">
+    <div class="no-data">Escribe algo para comenzar la búsqueda...</div>
+</div>
+
+<button class="btn-config" onclick="toggleModal(true)">⚙️ CARGAR / ACTUALIZAR LISTADO</button>
+
+<div id="uploadModal" class="modal">
+    <h3>Cargar Base de Datos</h3>
+    <p style="font-size: 13px; color: #666;">Copia las columnas de tu Excel y pégalas aquí. <br>
+    <b>Formato esperado (separado por comas o tabulaciones):</b><br>
+    Credencial, Apellido P, Apellido M, Nombre, CURP</p>
+    
+    <textarea id="dataInput" style="width:100%; height:300px; border: 1px solid #ccc; font-family: monospace; font-size: 12px;" placeholder="Pega aquí los datos de tu Excel..."></textarea>
+    
+    <div style="margin-top: 20px;">
+        <button onclick="processData()" style="width: 100%; background: var(--primary); color: white; border: none; padding: 15px; border-radius: 10px; font-weight: bold; font-size: 16px;">📥 IMPORTAR DATOS</button>
+        <button onclick="clearDatabase()" style="width: 100%; background: #c62828; color: white; border: none; padding: 10px; border-radius: 10px; margin-top: 10px;">⚠️ BORRAR TODO EL PADRÓN</button>
+        <button onclick="toggleModal(false)" style="width: 100%; background: #eee; border: none; padding: 10px; border-radius: 10px; margin-top: 20px;">❌ CANCELAR Y VOLVER</button>
+    </div>
+</div>
+
+<script>
+    let EMPLEADOS = JSON.parse(localStorage.getItem('ac_padron')) || [];
+
+    window.onload = () => {
+        document.getElementById('totalEmp').innerText = EMPLEADOS.length;
+    };
+
+    function toggleModal(show) {
+        document.getElementById('uploadModal').style.display = show ? 'block' : 'none';
+    }
+
+    function processData() {
+        const rawText = document.getElementById('dataInput').value.trim();
+        if(!rawText) return alert("Pega algunos datos primero");
+
+        const lines = rawText.split('\n');
+        let newEntries = 0;
+
+        lines.forEach(line => {
+            // Detecta si es CSV (comas) o Excel (tabulaciones)
+            const sep = line.includes('\t') ? '\t' : ',';
+            const col = line.split(sep);
+            
+            if(col.length >= 4) {
+                EMPLEADOS.push({
+                    id: col[0].trim(), // Credencial
+                    ap: col[1].trim(), // Apellido P
+                    am: col[2].trim(), // Apellido M
+                    n: col[3].trim(),  // Nombre
+                    curp: col[8] ? col[8].trim() : (col[4] ? col[4].trim() : "N/A"), // Busca la CURP
+                    full: `${col[0]} ${col[3]} ${col[1]} ${col[2]} ${col[8] || col[4]}`.toLowerCase()
+                });
+                newEntries++;
+            }
+        });
+
+        localStorage.setItem('ac_padron', JSON.stringify(EMPLEADOS));
+        document.getElementById('totalEmp').innerText = EMPLEADOS.length;
+        alert("Se han añadido " + newEntries + " empleados correctamente.");
+        document.getElementById('dataInput').value = "";
+        toggleModal(false);
+    }
+
+    function realTimeSearch() {
+        const query = document.getElementById('mainSearch').value.toLowerCase().trim();
+        const resultsDiv = document.getElementById('results');
+        
+        if(query.length < 2) {
+            resultsDiv.innerHTML = '<div class="no-data">Escribe al menos 2 letras para buscar...</div>';
+            return;
+        }
+
+        const filtered = EMPLEADOS.filter(e => e.full.includes(query)).slice(0, 20); // Limita a 20 resultados por velocidad
+
+        if(filtered.length === 0) {
+            resultsDiv.innerHTML = '<div class="no-data">❌ No se encontró ningún empleado.</div>';
+            return;
+        }
+
+        resultsDiv.innerHTML = filtered.map(e => `
+            <div class="employee-card">
+                <div class="emp-name">${e.n} ${e.ap} ${e.am}</div>
+                <div class="emp-detail">
+                    <div><span class="label">Credencial:</span><br><b>${e.id}</b></div>
+                    <div><span class="label">CURP:</span><br><b>${e.curp}</b></div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function clearDatabase() {
+        if(confirm("¿Estás seguro de borrar todos los datos de empleados?")) {
+            localStorage.removeItem('ac_padron');
+            EMPLEADOS = [];
+            document.getElementById('totalEmp').innerText = "0";
+            location.reload();
+        }
+    }
+</script>
+
+</body>
+</html>
